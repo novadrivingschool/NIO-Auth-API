@@ -7,30 +7,21 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  const isProd = process.env.NODE_ENV === 'production';
-
-  // 🔓 CORS abierto (todos los orígenes)
-  // Nota: si en algún momento usas cookies/sesiones (credentials: true),
-  // NO puedes usar '*' y deberás cambiar origin a 'true' o una lista explícita.
   app.enableCors({
-    origin: '*',
+    origin: '*', // permitir todos los orígenes
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    // Deja allowedHeaders indefinido para que el middleware refleje lo que pida el preflight
-    allowedHeaders: undefined,
-    credentials: false, // si vas a usar cookies httpOnly, cambia a true y NO uses '*'
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: false, // ❗ sin credenciales
     maxAge: 86400,
-    optionsSuccessStatus: 204,
   });
 
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-  }));
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
+  const isProd = process.env.NODE_ENV === 'production';
+  const port = Number(process.env.PORT ?? 5001);
+
   if (!isProd) {
-    const port = process.env.PORT ?? 5001;
     const config = new DocumentBuilder()
       .setTitle('Auth & Users API')
       .setDescription('API para gestión de usuarios y autenticación')
@@ -39,11 +30,9 @@ async function bootstrap() {
       .addServer(`http://localhost:${port}`)
       .build();
     const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('docs', app, document, {
-      swaggerOptions: { persistAuthorization: true },
-    });
+    SwaggerModule.setup('docs', app, document, { swaggerOptions: { persistAuthorization: true } });
   }
 
-  await app.listen(process.env.PORT ?? 5001);
+  await app.listen(port);
 }
 bootstrap();

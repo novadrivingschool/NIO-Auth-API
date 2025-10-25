@@ -1,5 +1,5 @@
 // src/auth/auth.controller.ts
-import { Controller, Post, Body, HttpCode, Req } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, Req, Get, UnauthorizedException } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -15,11 +15,14 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { TokensDto } from './dto/tokens.dto';
 import { Public } from './decorators/public.decorator';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { LoginElectronDto } from './dto/login-electron.dto';
+
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) { }
+
 
   @Public()
   @Post('login')
@@ -63,7 +66,46 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 
+  // src/auth/auth.controller.ts
   @Post('logout')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Cerrar sesión (invalida el refresh token)' })
+  @ApiBearerAuth()
+  @ApiNoContentResponse({ description: 'Logout exitoso' })
+  @ApiUnauthorizedResponse({ description: 'Token inválido o ausente' })
+  async logout(@Req() req: any): Promise<void> {
+    // JwtStrategy.validate() debe retornar { userId, email, roles, sid? }
+    const userId: string | undefined = req.user?.userId
+    const sid: string | undefined = req.user?.sid
+    await this.authService.logout(userId, sid)
+  }
+
+  // Endpoint para obtener los datos del usuario autenticado
+  @Get('me')
+  @ApiBearerAuth()  // Asegura que el token de autorización sea requerido
+  @ApiOperation({ summary: 'Obtener los datos del usuario autenticado' })
+  @ApiOkResponse({ description: 'Datos del usuario obtenidos correctamente' })
+  @ApiUnauthorizedResponse({ description: 'Token inválido o expirado' })
+  async getMe(@Req() req: any) {
+    const userId = req.user?.userId; // Obtén el ID del usuario autenticado
+
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+
+    // Obtén el usuario con su perfil
+    const user = await this.authService.getUserWithProfile(userId);
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    console.log(">>>>>>>>>>> user: ", user);
+
+    return user;  // Devuelve el usuario con su perfil
+  }
+
+  /* @Post('logout')
   @HttpCode(204)
   @ApiOperation({ summary: 'Cerrar sesión (invalida el refresh token)' })
   @ApiBearerAuth()
@@ -73,5 +115,13 @@ export class AuthController {
     // JwtStrategy.validate() debe retornar { userId, email, roles }
     const userId = req.user?.userId;
     await this.authService.logout(userId);
-  }
+  } */
+
+  /* @Post('login/electron')
+  @ApiOperation({ summary: 'Login Electron con sesión única por usuario' })
+  @ApiBody({ type: LoginElectronDto })
+  @ApiOkResponse({ description: 'Sesión registrada; tokens devueltos' })
+  loginElectron(@Body() dto: LoginElectronDto) {
+    return this.authService.loginElectron(dto)
+  } */
 }

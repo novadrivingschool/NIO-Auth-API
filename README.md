@@ -56,8 +56,8 @@ chmod 600 ~/.ssh/id_ed25519_beestomer
 
 
 # Docker
-docker build -t auth-and-users-api .
+docker build -t dev-nova-in-out-auth-api .
 
-docker run -d --name auth-and-users-api -p 5001:5001 --env-file .env auth-and-users-api
+docker run -d --name dev-nova-in-out-auth-api -p 5013:5013 --env-file .env dev-nova-in-out-auth-api
 
-docker logs -f auth-and-users-api
+docker logs -f dev-nova-in-out-auth-api

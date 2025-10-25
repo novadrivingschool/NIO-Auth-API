@@ -6,6 +6,8 @@ import { AuthModule } from './auth/auth.module';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
+import { DevicesModule } from './devices/devices.module';
+import { SessionsSocketModule } from './sessions-socket/sessions-socket.module';
 
 @Module({
   imports: [
@@ -34,7 +36,9 @@ import { BootstrapModule } from './bootstrap/bootstrap.module';
 
     UsersModule,
     AuthModule,
-    BootstrapModule
+    BootstrapModule,
+    DevicesModule,
+    SessionsSocketModule,
   ],
   controllers: [],
   providers: [

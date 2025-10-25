@@ -46,4 +46,8 @@ export class UserProfile {
 
     @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
     updatedAt: Date;
+
+    @ApiPropertyOptional() 
+    @Column({ name: 'employee_number', type: 'varchar', length: 16, nullable: true })
+    employee_number?: string;
 }

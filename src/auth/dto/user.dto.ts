@@ -9,4 +9,5 @@ export class UserDto {
     firstName?: string;
     lastName?: string;
     avatarUrl?: string;
+    employee_number?: string;
 }

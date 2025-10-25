@@ -49,6 +49,7 @@ export class UsersController {
       },
     },
   })
+
   @ApiCreatedResponse({ type: User, description: 'Usuario creado exitosamente' })
   @ApiBadRequestResponse({ description: 'Datos inválidos o email ya registrado' })
   create(@Body() dto: CreateUserDto) {
@@ -80,6 +81,7 @@ export class UsersController {
       desactivar: { summary: 'Desactivar usuario', value: { isActive: false } },
     },
   })
+
   @ApiOkResponse({ type: User, description: 'Usuario actualizado' })
   @ApiNotFoundResponse({ description: 'Usuario no encontrado' })
   @ApiBadRequestResponse({ description: 'Datos inválidos o sin campos para actualizar' })
