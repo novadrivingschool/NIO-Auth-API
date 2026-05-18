@@ -1,4 +1,15 @@
-import { IsEmail, IsNotEmpty, MinLength, IsOptional, IsBoolean, IsEnum, IsString, IsDateString, IsUrl, IsObject } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  MinLength,
+  IsOptional,
+  IsBoolean,
+  IsEnum,
+  IsString,
+  IsDateString,
+  IsUrl,
+  IsObject,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '../entities/user.entity';
@@ -10,14 +21,19 @@ export class CreateUserProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() phone?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() gender?: string;
   @ApiPropertyOptional() @IsOptional() @IsUrl() avatarUrl?: string;
-  @ApiPropertyOptional() @IsOptional() @IsObject() metadata?: Record<string, any>;
+  @ApiPropertyOptional() @IsOptional() @IsString() userName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsObject() metadata?: Record<
+    string,
+    any
+  >;
 }
 
 export class CreateUserDto {
   @ApiProperty({ example: 'admin@example.com' })
+  @IsOptional()
   @IsEmail()
   @Transform(({ value }) => String(value).trim().toLowerCase())
-  email: string;
+  email?: string;
 
   @ApiProperty({ minLength: 8, example: 'StrongPass123' })
   @IsNotEmpty()

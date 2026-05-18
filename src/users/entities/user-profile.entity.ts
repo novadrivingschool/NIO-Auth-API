@@ -1,53 +1,74 @@
 // user-profile.entity.ts
 import {
-    Entity, PrimaryGeneratedColumn, Column, OneToOne, JoinColumn,
-    CreateDateColumn, UpdateDateColumn
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  OneToOne,
+  JoinColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
 } from 'typeorm';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { User } from './user.entity';
 
 @Entity('user_profiles')
 export class UserProfile {
-    @PrimaryGeneratedColumn('uuid')
-    id: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-    // 👇 UserProfile es el DUEÑO (tiene la FK user_id)
-    @OneToOne(() => User, u => u.profile, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'user_id' })
-    user: User;
+  // 👇 UserProfile es el DUEÑO (tiene la FK user_id)
+  @OneToOne(() => User, (u) => u.profile, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
 
-    @ApiPropertyOptional() @Column({ name: 'first_name', type: 'varchar', length: 120, nullable: true })
-    firstName?: string;
+  @ApiPropertyOptional()
+  @Column({ name: 'first_name', type: 'varchar', length: 120, nullable: true })
+  firstName?: string;
 
-    @ApiPropertyOptional() @Column({ name: 'last_name', type: 'varchar', length: 120, nullable: true })
-    lastName?: string;
+  @ApiPropertyOptional()
+  @Column({ name: 'last_name', type: 'varchar', length: 120, nullable: true })
+  lastName?: string;
 
-    // Fecha sola (no hora)
-    @ApiPropertyOptional() @Column({ name: 'birthdate', type: 'date', nullable: true })
-    birthdate?: string; // 'YYYY-MM-DD'
+  // Fecha sola (no hora)
+  @ApiPropertyOptional()
+  @Column({ name: 'birthdate', type: 'date', nullable: true })
+  birthdate?: string; // 'YYYY-MM-DD'
 
-    @ApiPropertyOptional() @Column({ name: 'phone', type: 'varchar', length: 40, nullable: true })
-    phone?: string;
+  @ApiPropertyOptional()
+  @Column({ name: 'phone', type: 'varchar', length: 40, nullable: true })
+  phone?: string;
 
-    @ApiPropertyOptional() 
-    @Column({ name: 'gender', type: 'varchar', length: 16, nullable: true })
-    gender?: string;
+  @Index({ unique: true, where: 'user_name IS NOT NULL' })
+  @ApiPropertyOptional()
+  @Column({ name: 'user_name', type: 'varchar', length: 200, nullable: true })
+  userName?: string;
 
-    @ApiPropertyOptional() 
-    @Column({ name: 'avatar_url', type: 'varchar', length: 512, nullable: true })
-    avatarUrl?: string;
+  @ApiPropertyOptional()
+  @Column({ name: 'gender', type: 'varchar', length: 16, nullable: true })
+  gender?: string;
 
-    // Campos flexibles
-    @ApiPropertyOptional() @Column({ name: 'metadata', type: 'jsonb', nullable: true })
-    metadata?: Record<string, any>;
+  @ApiPropertyOptional()
+  @Column({ name: 'avatar_url', type: 'varchar', length: 512, nullable: true })
+  avatarUrl?: string;
 
-    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
-    createdAt: Date;
+  // Campos flexibles
+  @ApiPropertyOptional()
+  @Column({ name: 'metadata', type: 'jsonb', nullable: true })
+  metadata?: Record<string, any>;
 
-    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-    updatedAt: Date;
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
 
-    @ApiPropertyOptional() 
-    @Column({ name: 'employee_number', type: 'varchar', length: 16, nullable: true })
-    employee_number?: string;
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
+
+  @ApiPropertyOptional()
+  @Column({
+    name: 'employee_number',
+    type: 'varchar',
+    length: 16,
+    nullable: true,
+  })
+  employee_number?: string;
 }
