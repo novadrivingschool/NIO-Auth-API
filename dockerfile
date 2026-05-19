@@ -32,11 +32,10 @@ RUN npm install --only=production
 # Copiar los artefactos compilados desde la etapa anterior
 COPY --from=builder /app/dist ./dist
 
-# Variables de entorno
-ENV NODE_ENV=production \
-    PORT=3000
+# El PORT real se inyecta desde .env via docker-compose
+ENV NODE_ENV=production
 
-EXPOSE 3000
+EXPOSE 5013
 
 # Comando de inicio
 CMD ["node", "dist/main.js"]
