@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: dev-nova-in-out-auth-api
+    container_name: nio-auth-dev
     restart: always
     env_file:
       - .env

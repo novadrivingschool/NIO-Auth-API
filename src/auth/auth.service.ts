@@ -98,20 +98,24 @@ export class AuthService {
       };
     }
   > {
-    const email = String(dto.email).trim().toLowerCase();
-    const user = await this.usersRepo.findOne({
-      where: { email, isActive: true },
-      select: [
-        'id',
-        'email',
-        'passwordHash',
-        'roles',
-        'isActive',
-        'createdAt',
-        'updatedAt',
-      ],
-      relations: { profile: true },
-    });
+    const identifier = String(dto.email).trim().toLowerCase();
+    const isEmail = identifier.includes('@');
+
+    // Buscar por email primero; si no tiene @, buscar por userName en el perfil
+    let user = isEmail
+      ? await this.usersRepo.findOne({
+          where: { email: identifier, isActive: true },
+          select: ['id', 'email', 'passwordHash', 'roles', 'isActive', 'createdAt', 'updatedAt'],
+          relations: { profile: true },
+        })
+      : await this.usersRepo
+          .createQueryBuilder('user')
+          .addSelect(['user.passwordHash'])
+          .innerJoinAndSelect('user.profile', 'profile')
+          .where('LOWER(profile.user_name) = :userName', { userName: identifier })
+          .andWhere('user.isActive = true')
+          .getOne();
+
     if (!user)
       throw new UnauthorizedException({
         code: 'BAD_CREDENTIALS',
@@ -434,9 +438,8 @@ export class AuthService {
   async getUserWithProfile(userId: string) {
     const user = await this.usersRepo.findOne({
       where: { id: userId },
-      relations: ['profile'], // Esto asegura que el perfil se carga también
+      relations: ['profile'],
     });
-
-    return user; // Devuelve el usuario con el perfil
+    return user;
   }
 }

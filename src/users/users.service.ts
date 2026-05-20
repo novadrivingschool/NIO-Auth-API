@@ -190,7 +190,7 @@ export class UsersService {
       }
     }
 
-    if (dto.profile?.userName) {
+    if (dto.profile?.userName && dto.profile.userName !== user.profile?.userName) {
       const usernameExists = await this.repo.findOne({
         where: { profile: { userName: dto.profile.userName } },
         relations: { profile: true },
@@ -210,8 +210,22 @@ export class UsersService {
 
     if (dto.profile) {
       if (!user.profile) user.profile = new UserProfile();
-
       Object.assign(user.profile, dto.profile);
+    }
+
+    // Generar employee_number siempre que no tenga (null o vacío) y haya nombre completo
+    if (user.profile && (!user.profile.employee_number || user.profile.employee_number.trim() === '')) {
+      const firstName = user.profile.firstName;
+      const lastName = user.profile.lastName;
+      if (firstName && lastName) {
+        const newEmpNumber = this.getEmployeeNumber(firstName, lastName);
+        user.profile.employee_number = newEmpNumber;
+        // UPDATE directo — evita problemas de cascade o relación suelta
+        await this.profileRepo.update(
+          { id: user.profile.id },
+          { employee_number: newEmpNumber },
+        );
+      }
     }
 
     return this.repo.save(user);
@@ -250,21 +264,20 @@ export class UsersService {
     }
 
     if (roles && roles.length > 0) {
-      queryBuilder.andWhere('user.roles && :roles', { roles });
+      queryBuilder.andWhere('user.roles && :roles::text[]', { roles });
     }
 
-    // Paginación
-    queryBuilder.skip((page - 1) * limit).take(limit);
+    queryBuilder.orderBy('user.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
 
-    const [items, total] = await queryBuilder.getManyAndCount();
+    const [items, totalItems] = await queryBuilder.getManyAndCount();
 
     return {
       items,
       meta: {
-        totalItems: total,
+        totalItems,
         itemCount: items.length,
         itemsPerPage: limit,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(totalItems / limit),
         currentPage: page,
       },
     };
