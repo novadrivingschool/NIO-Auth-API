@@ -71,13 +71,14 @@ docker-compose up -d --build
 
 # 4. Verificar que levantó
 docker-compose ps
-docker-compose logs -f
+docker logs -f nio-auth-dev
 ```
 
 ### Actualizar después de un cambio de código
 
 ```bash
 git pull
+docker-compose down
 docker-compose up -d --build
 ```
 
@@ -88,7 +89,7 @@ docker-compose up -d --build
 docker-compose ps
 
 # Logs en tiempo real
-docker-compose logs -f
+docker logs -f nio-auth-dev
 
 # Reiniciar sin rebuild
 docker-compose restart
@@ -97,7 +98,7 @@ docker-compose restart
 docker-compose down
 
 # Rebuild limpio desde cero
-docker-compose down --rmi local
+docker-compose down
 docker-compose up -d --build
 ```
 

@@ -14,12 +14,17 @@ import { UserDto } from './dto/user.dto';
 import { AuthSession } from 'src/users/entities/auth-session.entity';
 import { User } from 'src/users/entities/user.entity';
 import { SessionsSocketService } from 'src/sessions-socket/sessions-socket.service';
+import { DevicesRegistry } from 'src/devices/devices.registry';
+import { LoginThrottleService } from './login-throttle.service';
 
 type JwtPayload = {
   sub: string;
   email: string;
   roles: string[];
 };
+
+/** Ventana de gracia para refreshes concurrentes legítimos (rotación reciente). */
+const GRACE_MS = 60_000;
 
 @Injectable()
 export class AuthService {
@@ -36,17 +41,13 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly sockets: SessionsSocketService,
+    private readonly registry: DevicesRegistry,
+    private readonly throttle: LoginThrottleService,
   ) {
     this.accessTtl = this.config.get<string>('JWT_ACCESS_TTL') ?? '15m';
     this.refreshTtl = this.config.get<string>('JWT_REFRESH_TTL') ?? '7d';
-    this.accessSecret =
-      this.config.get<string>('JWT_ACCESS_SECRET') ??
-      this.config.get<string>('JWT_SECRET') ??
-      'access_secret';
-    this.refreshSecret =
-      this.config.get<string>('JWT_REFRESH_SECRET') ??
-      this.config.get<string>('JWT_SECRET') ??
-      'refresh_secret';
+    this.accessSecret = this.config.getOrThrow<string>('JWT_ACCESS_SECRET');
+    this.refreshSecret = this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ export class AuthService {
   // ────────────────────────────────────────────────────────────────────────────
   // Login unificado: WEB (sin deviceId/label) vs ELECTRON (con deviceId+label)
   // ────────────────────────────────────────────────────────────────────────────
-  async login(dto: LoginDto): Promise<
+  async login(dto: LoginDto, ip: string = 'unknown'): Promise<
     AuthResponseDto & {
       session?: {
         id: string;
@@ -101,6 +102,9 @@ export class AuthService {
     const identifier = String(dto.email).trim().toLowerCase();
     const isEmail = identifier.includes('@');
 
+    // Lockout: bloquea si hay demasiados intentos fallidos recientes
+    this.throttle.check(identifier, ip);
+
     // Buscar por email primero; si no tiene @, buscar por userName en el perfil
     let user = isEmail
       ? await this.usersRepo.findOne({
@@ -116,18 +120,24 @@ export class AuthService {
           .andWhere('user.isActive = true')
           .getOne();
 
-    if (!user)
+    if (!user) {
+      this.throttle.registerFailure(identifier, ip);
       throw new UnauthorizedException({
         code: 'BAD_CREDENTIALS',
         message: 'Invalid credentials',
       });
+    }
 
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!ok)
+    if (!ok) {
+      this.throttle.registerFailure(identifier, ip);
       throw new UnauthorizedException({
         code: 'BAD_CREDENTIALS',
         message: 'Invalid credentials',
       });
+    }
+
+    this.throttle.registerSuccess(identifier, ip);
 
     const isElectron = !!dto.deviceId && !!dto.label && dto.label.length > 0;
 
@@ -190,6 +200,16 @@ export class AuthService {
       prev.refreshTokenHash = null;
       await this.sessionsRepo.save(prev);
       revokedSid = prev.id;
+
+      // Notificar al cliente de la sesión revocada y desconectarlo (best-effort)
+      try {
+        this.registry.emitToSid(prev.id, 'auth:force-logout', {
+          reason: 'NEW_LOGIN',
+          deviceId: dto.deviceId,
+          at: new Date().toISOString(),
+        });
+        this.registry.disconnectSid(prev.id);
+      } catch {}
     }
 
     // Upsert sesión actual
@@ -247,10 +267,7 @@ export class AuthService {
   // ────────────────────────────────────────────────────────────────────────────
   // Refresh unificado: ELECTRON (sid) vs WEB (sin sid)
   // ────────────────────────────────────────────────────────────────────────────
-  async refresh(refreshToken: string): Promise<TokensDto> {
-    console.log('--------------------------------------');
-    console.log('-------------REFRESHING----------');
-    console.log('--------------------------------------');
+  async refresh(refreshToken: string, deviceId?: string): Promise<TokensDto> {
     if (!refreshToken) {
       throw new UnauthorizedException({
         code: 'MISSING_REFRESH',
@@ -284,11 +301,35 @@ export class AuthService {
         });
       }
 
+      // Device binding: el refresh debe venir del mismo dispositivo de la sesión
+      if (deviceId && session.deviceId !== deviceId) {
+        session.isActive = false;
+        session.revokedAt = new Date();
+        session.refreshTokenHash = null;
+        await this.sessionsRepo.save(session);
+        throw new UnauthorizedException({
+          code: 'DEVICE_MISMATCH',
+          message: 'Refresh token bound to another device',
+        });
+      }
+
       const ok =
         session.refreshTokenHash &&
         (await argon2.verify(session.refreshTokenHash, refreshToken));
       if (!ok) {
-        // invalida la sesión para no permitir reuse
+        // Grace window anti-race: si la rotación fue hace muy poco, es muy
+        // probable que sea un refresh concurrente legítimo del mismo cliente
+        // que llegó con el token anterior. No revocamos; el cliente debe
+        // reintentar con el token más nuevo.
+        const lastUsed = session.lastUsedAt?.getTime();
+        if (lastUsed && Date.now() - lastUsed < GRACE_MS) {
+          throw new UnauthorizedException({
+            code: 'REFRESH_STALE',
+            message: 'Refresh token rotated by a concurrent request',
+          });
+        }
+
+        // Fuera de la ventana de gracia: reuse sospechoso → invalida la sesión
         session.isActive = false;
         session.revokedAt = new Date();
         session.refreshTokenHash = null;

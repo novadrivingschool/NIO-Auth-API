@@ -88,6 +88,28 @@ export class DevicesRegistry {
         return true;
     }
 
+    /** Emite un evento a todos los sockets del room `sid:{sid}` */
+    emitToSid(sid: string, event: string, payload: any): boolean {
+        if (!this.io) {
+            E('emitToSid: io not set');
+            return false;
+        }
+        this.io.to(`sid:${sid}`).emit(event, payload);
+        L('emitToSid sent', { sid, event });
+        return true;
+    }
+
+    /** Desconecta todos los sockets del room `sid:{sid}` */
+    disconnectSid(sid: string): boolean {
+        if (!this.io) {
+            E('disconnectSid: io not set');
+            return false;
+        }
+        this.io.in(`sid:${sid}`).disconnectSockets(true);
+        L('disconnectSid done', { sid });
+        return true;
+    }
+
     /** Utilidad para debuggear desde controller si quieres */
     dump() {
         const byDev = [...this.byDevice.values()];

@@ -61,7 +61,7 @@ export class DevicesGateway
 
             // Verifica con secreto del ACCESS token
             const accessSecret =
-                this.config.get('JWT_ACCESS_SECRET') ?? this.config.get('JWT_SECRET');
+                this.config.getOrThrow<string>('JWT_ACCESS_SECRET');
             let payload: JwtPayload;
             try {
                 payload = await this.jwt.verifyAsync<JwtPayload>(token, {

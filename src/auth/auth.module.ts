@@ -13,6 +13,8 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { AuthSession } from '../users/entities/auth-session.entity';
 import { SessionsSocketModule } from 'src/sessions-socket/sessions-socket.module';
+import { DevicesModule } from 'src/devices/devices.module';
+import { LoginThrottleService } from './login-throttle.service';
 
 @Module({
   imports: [
@@ -29,10 +31,11 @@ import { SessionsSocketModule } from 'src/sessions-socket/sessions-socket.module
         signOptions: { expiresIn: cfg.get<string>('JWT_ACCESS_TTL') ?? '15m' },
       }),
     }),
-    SessionsSocketModule
+    SessionsSocketModule,
+    DevicesModule, // 👈 exporta DevicesRegistry (emit force-logout al revocar sesión)
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard],
+  providers: [AuthService, JwtStrategy, JwtAuthGuard, LoginThrottleService],
   exports: [
     AuthService,
     JwtModule,      // 👈 para que otros módulos (p. ej. DevicesModule) inyecten JwtService
