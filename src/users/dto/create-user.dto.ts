@@ -9,6 +9,7 @@ import {
   IsDateString,
   IsUrl,
   IsObject,
+  MaxLength,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -22,6 +23,25 @@ export class CreateUserProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() gender?: string;
   @ApiPropertyOptional() @IsOptional() @IsUrl() avatarUrl?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() userName?: string;
+  @ApiPropertyOptional({
+    example: '48213',
+    nullable: true,
+    description:
+      'Número de empleado EXTERNO (app de RR.HH.). Manual, opcional y único; vacío lo borra. No es el employee_number del NIO.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(50)
+  external_employee_number?: string | null;
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Modo vinculado NIO + Activity Report: deshabilita el clock manual de la app NIO y exige el socket activo en el Activity.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  activity_linked?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsObject() metadata?: Record<
     string,
     any

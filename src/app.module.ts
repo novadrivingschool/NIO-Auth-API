@@ -8,6 +8,11 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { DevicesModule } from './devices/devices.module';
 import { SessionsSocketModule } from './sessions-socket/sessions-socket.module';
+import { SettingsModule } from './settings/settings.module';
+import { HandshakesModule } from './handshakes/handshakes.module';
+import { SchedulesModule } from './schedules/schedules.module';
+import { RemoteClockModule } from './remote-clock/remote-clock.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -39,8 +44,12 @@ import { SessionsSocketModule } from './sessions-socket/sessions-socket.module';
     BootstrapModule,
     DevicesModule,
     SessionsSocketModule,
+    SettingsModule,
+    HandshakesModule,
+    SchedulesModule,
+    RemoteClockModule,
   ],
-  controllers: [],
+  controllers: [HealthController],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard }, // 👈 protege TODO por defecto
   ],

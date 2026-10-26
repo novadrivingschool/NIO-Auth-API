@@ -8,12 +8,13 @@ import { DevicesRegistry } from './devices.registry'
 import { AuthSession } from '../users/entities/auth-session.entity'
 import { DevicesController } from './devices.controller'
 import { User } from 'src/users/entities/user.entity'
+import { HandshakeCapture } from 'src/handshakes/entities/handshake-capture.entity'
 
 @Module({
   imports: [
     ConfigModule,
     JwtModule.register({}), // usa ConfigService para verify()
-    TypeOrmModule.forFeature([AuthSession, User]),
+    TypeOrmModule.forFeature([AuthSession, User, HandshakeCapture]),
     
   ],
   providers: [DevicesGateway, DevicesRegistry],

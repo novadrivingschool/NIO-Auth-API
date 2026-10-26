@@ -296,6 +296,44 @@ describe('AuthService', () => {
       expect(sessionsRepo.save).not.toHaveBeenCalled();
     });
 
+    it('token ANTERIOR dentro de la ventana prev → acepta, rota de nuevo y desplaza el hash', async () => {
+      setupElectronPayload();
+      const session = makeSession({
+        refreshTokenHash: 'hash-current',
+        prevRefreshTokenHash: 'hash-prev',
+        prevRotatedAt: new Date(Date.now() - 2 * 60_000),
+        lastUsedAt: new Date(Date.now() - 2 * 60_000),
+      });
+      sessionsRepo.findOne.mockResolvedValue(session);
+      usersRepo.findOne.mockResolvedValue(makeUser());
+      (argon2Mock.verify as jest.Mock).mockImplementation(async (hash: string) => hash === 'hash-prev');
+      (argon2Mock.hash as jest.Mock).mockResolvedValue('hash-new');
+
+      const res = await service.refresh(OLD_REFRESH);
+
+      expect(res.refreshToken).toBeDefined();
+      expect(session.prevRefreshTokenHash).toBe('hash-current');
+      expect(session.refreshTokenHash).toBe('hash-new');
+      expect(session.isActive).toBe(true);
+    });
+
+    it('token anterior FUERA de la ventana prev → revoca + INVALID_REFRESH', async () => {
+      setupElectronPayload();
+      const session = makeSession({
+        refreshTokenHash: 'hash-current',
+        prevRefreshTokenHash: 'hash-prev',
+        prevRotatedAt: new Date(Date.now() - 10 * 60_000),
+        lastUsedAt: new Date(Date.now() - 10 * 60_000),
+      });
+      sessionsRepo.findOne.mockResolvedValue(session);
+      (argon2Mock.verify as jest.Mock).mockImplementation(async (hash: string) => hash === 'hash-prev');
+
+      await expect(service.refresh(OLD_REFRESH)).rejects.toMatchObject({
+        response: { code: 'INVALID_REFRESH' },
+      });
+      expect(session.isActive).toBe(false);
+    });
+
     it('hash mismatch con rotación hace 5 min → revoca la sesión + INVALID_REFRESH', async () => {
       setupElectronPayload();
       const session = makeSession({ lastUsedAt: new Date(Date.now() - 5 * 60_000) });

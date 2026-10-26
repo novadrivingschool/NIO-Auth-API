@@ -63,6 +63,10 @@ export class UserProfile {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
+  @Index('UQ_user_profiles_employee_number', {
+    unique: true,
+    where: 'employee_number IS NOT NULL',
+  })
   @ApiPropertyOptional()
   @Column({
     name: 'employee_number',
@@ -71,4 +75,26 @@ export class UserProfile {
     nullable: true,
   })
   employee_number?: string;
+
+  // Número de empleado EXTERNO (app de RR.HH.). Aparte del employee_number del NIO.
+  @Index('UQ_user_profiles_external_employee_number', {
+    unique: true,
+    where: 'external_employee_number IS NOT NULL',
+  })
+  @ApiPropertyOptional({ nullable: true })
+  @Column({
+    name: 'external_employee_number',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
+  external_employee_number?: string | null;
+
+  /**
+   * Modo vinculado: NIO y Activity Report se usan en conjunto. Con true, el clock manual de la app
+   * NIO se deshabilita y el Activity solo hace clock in/out con el socket de la app activo.
+   */
+  @ApiPropertyOptional({ default: false })
+  @Column({ name: 'activity_linked', type: 'boolean', default: false })
+  activity_linked: boolean;
 }

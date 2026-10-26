@@ -3,11 +3,11 @@ import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class LoginDto {
-    @ApiProperty({ example: 'admin@example.com or john.doe' })
+    @ApiProperty({ example: 'NIOJD483920' })
     @IsString()
     @IsNotEmpty()
     @Transform(({ value }) => String(value).trim().toLowerCase())
-    email: string; // acepta email o username
+    email: string; // employee_number
 
     @ApiProperty({ example: 'StrongPass123', minLength: 8 })
     @IsNotEmpty()

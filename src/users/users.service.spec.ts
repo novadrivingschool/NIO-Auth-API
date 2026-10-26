@@ -10,7 +10,7 @@ import * as bcrypt from 'bcrypt';
 function makeProfile(overrides = {}): UserProfile {
   return { id: 'p1', firstName: 'Mateo', lastName: 'Torres', phone: null,
     birthdate: null, gender: null, userName: 'mateoT', avatarUrl: null,
-    metadata: null, employee_number: null, createdAt: new Date(), updatedAt: new Date(),
+    metadata: null, employee_number: null, external_employee_number: null, createdAt: new Date(), updatedAt: new Date(),
     ...overrides } as unknown as UserProfile;
 }
 
@@ -22,11 +22,22 @@ function makeUser(overrides = {}): User {
 }
 
 const makeRepoMock = () => ({
-  findOne: jest.fn(), find: jest.fn(), create: jest.fn(),
+  findOne: jest.fn(), find: jest.fn(), create: jest.fn(), exists: jest.fn().mockResolvedValue(false),
   save: jest.fn(), delete: jest.fn(), update: jest.fn(), createQueryBuilder: jest.fn(),
 });
 
 const makeDataSourceMock = () => ({ transaction: jest.fn() });
+
+/** QueryBuilder mínimo para `assertExternalEmployeeNumberAvailable` (where/andWhere/getExists). */
+const mockExternalNumberTaken = (repo: any, taken: boolean) => {
+  const qb: any = {
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getExists: jest.fn().mockResolvedValue(taken),
+  };
+  repo.createQueryBuilder.mockReturnValue(qb);
+  return qb;
+};
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -57,14 +68,14 @@ describe('UsersService', () => {
 
   // getEmployeeNumber
   describe('getEmployeeNumber', () => {
-    it('genera NOVA{INICIALES}{6digits} - Mateo Torres -> NOVAMT', () => {
-      expect(service.getEmployeeNumber('Mateo', 'Torres')).toMatch(/^NOVAMT\d{6}$/);
+    it('genera NIO{INICIALES}{6digits} - Mateo Torres -> NIOMT', () => {
+      expect(service.getEmployeeNumber('Mateo', 'Torres')).toMatch(/^NIOMT\d{6}$/);
     });
     it('convierte iniciales a mayusculas', () => {
-      expect(service.getEmployeeNumber('john', 'doe')).toMatch(/^NOVAJD\d{6}$/);
+      expect(service.getEmployeeNumber('john', 'doe')).toMatch(/^NIOJD\d{6}$/);
     });
-    it('Ximena Izurieta -> NOVAXI', () => {
-      expect(service.getEmployeeNumber('Ximena', 'Izurieta')).toMatch(/^NOVAXI\d{6}$/);
+    it('Ximena Izurieta -> NIOXI', () => {
+      expect(service.getEmployeeNumber('Ximena', 'Izurieta')).toMatch(/^NIOXI\d{6}$/);
     });
   });
 
@@ -86,16 +97,64 @@ describe('UsersService', () => {
       await service.create({ email: 'mateo@nova.com', password: 'secreto123',
         profile: { firstName: 'Mateo', lastName: 'Torres', avatarUrl: '' } } as any);
       const pCall = mgr.create.mock.calls.find((c: any[]) => c[0] === UserProfile);
-      expect(pCall[1].employee_number).toMatch(/^NOVAMT\d{6}$/);
+      expect(pCall[1].employee_number).toMatch(/^NIOMT\d{6}$/);
     });
 
-    it('fallback NOVAJD sin nombre', async () => {
+    it('fallback NIOJD sin nombre', async () => {
       repo.findOne.mockResolvedValue(null);
       const mgr = setupManager(makeUser());
       await service.create({ email: 'x@x.com', password: 'secreto123',
         profile: { avatarUrl: '' } } as any);
       const pCall = mgr.create.mock.calls.find((c: any[]) => c[0] === UserProfile);
-      expect(pCall[1].employee_number).toMatch(/^NOVAJD\d{6}$/);
+      expect(pCall[1].employee_number).toMatch(/^NIOJD\d{6}$/);
+    });
+
+    describe('external_employee_number (app de RR.HH.)', () => {
+      it('lo guarda recortado y NO afecta al employee_number del NIO (se sigue autogenerando)', async () => {
+        repo.findOne.mockResolvedValue(null);
+        mockExternalNumberTaken(profileRepo, false);
+        const mgr = setupManager(makeUser());
+        await service.create({ email: 'mateo@nova.com', password: 'secreto123',
+          profile: { firstName: 'Mateo', lastName: 'Torres', external_employee_number: '  48213 ' } } as any);
+        const pCall = mgr.create.mock.calls.find((c: any[]) => c[0] === UserProfile);
+        expect(pCall[1].external_employee_number).toBe('48213');
+        expect(pCall[1].employee_number).toMatch(/^NIOMT\d{6}$/);
+      });
+
+      it('sin valor o vacío queda null y no consulta unicidad', async () => {
+        repo.findOne.mockResolvedValue(null);
+        const mgr = setupManager(makeUser());
+        await service.create({ email: 'x@x.com', password: 'secreto123',
+          profile: { firstName: 'A', lastName: 'B', external_employee_number: '   ' } } as any);
+        const pCall = mgr.create.mock.calls.find((c: any[]) => c[0] === UserProfile);
+        expect(pCall[1].external_employee_number).toBeNull();
+        expect(profileRepo.createQueryBuilder).not.toHaveBeenCalled();
+      });
+
+      it('BadRequest si ya lo tiene otro perfil (sin importar mayúsculas)', async () => {
+        repo.findOne.mockResolvedValue(null);
+        const qb = mockExternalNumberTaken(profileRepo, true);
+        await expect(service.create({ email: 'x@x.com', password: 'secreto123',
+          profile: { external_employee_number: 'ab-1' } } as any)).rejects.toBeInstanceOf(BadRequestException);
+        expect(qb.where).toHaveBeenCalledWith(expect.stringContaining('UPPER'), { value: 'AB-1' });
+        expect(dataSource.transaction).not.toHaveBeenCalled();
+      });
+
+      it('traduce la violación del índice único (carrera) a BadRequest', async () => {
+        repo.findOne.mockResolvedValue(null);
+        mockExternalNumberTaken(profileRepo, false);
+        dataSource.transaction.mockRejectedValue(Object.assign(new Error('dup'), {
+          driverError: { code: '23505', constraint: 'UQ_user_profiles_external_employee_number' },
+        }));
+        await expect(service.create({ email: 'x@x.com', password: 'secreto123',
+          profile: { external_employee_number: '48213' } } as any)).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('otros errores de la transacción se propagan tal cual', async () => {
+        repo.findOne.mockResolvedValue(null);
+        dataSource.transaction.mockRejectedValue(new Error('boom'));
+        await expect(service.create({ email: 'x@x.com', password: 'secreto123' } as any)).rejects.toThrow('boom');
+      });
     });
 
     it('hashea password con bcrypt 12 rounds', async () => {
@@ -142,10 +201,10 @@ describe('UsersService', () => {
       repo.save.mockImplementation((u: any) => u);
       profileRepo.update = jest.fn().mockResolvedValue({ affected: 1 });
       await service.update('u1', {} as any);
-      expect(user.profile.employee_number).toMatch(/^NOVAMT\d{6}$/);
+      expect(user.profile.employee_number).toMatch(/^NIOMT\d{6}$/);
       expect(profileRepo.update).toHaveBeenCalledWith(
         { id: user.profile.id },
-        { employee_number: expect.stringMatching(/^NOVAMT\d{6}$/) },
+        { employee_number: expect.stringMatching(/^NIOMT\d{6}$/) },
       );
     });
 
@@ -155,21 +214,74 @@ describe('UsersService', () => {
       repo.save.mockImplementation((u: any) => u);
       profileRepo.update = jest.fn().mockResolvedValue({ affected: 1 });
       await service.update('u1', {} as any);
-      expect(user.profile.employee_number).toMatch(/^NOVAMT\d{6}$/);
+      expect(user.profile.employee_number).toMatch(/^NIOMT\d{6}$/);
       expect(profileRepo.update).toHaveBeenCalledWith(
         { id: user.profile.id },
-        { employee_number: expect.stringMatching(/^NOVAMT\d{6}$/) },
+        { employee_number: expect.stringMatching(/^NIOMT\d{6}$/) },
       );
     });
 
     it('NO sobreescribe employee_number existente', async () => {
-      const user = makeUser({ profile: makeProfile({ employee_number: 'NOVAMT123456' }) });
+      const user = makeUser({ profile: makeProfile({ employee_number: 'NIOMT123456' }) });
       repo.findOne.mockResolvedValue(user);
       repo.save.mockImplementation((u: any) => u);
       profileRepo.update = jest.fn();
       await service.update('u1', { profile: { firstName: 'Nuevo' } } as any);
-      expect(user.profile.employee_number).toBe('NOVAMT123456');
+      expect(user.profile.employee_number).toBe('NIOMT123456');
       expect(profileRepo.update).not.toHaveBeenCalled();
+    });
+
+    describe('external_employee_number (app de RR.HH.)', () => {
+      const withNio = () => makeUser({ profile: makeProfile({ employee_number: 'NIOMT123456' }) });
+
+      it('lo asigna recortado, excluyendo su propio perfil, y deja intacto el del NIO', async () => {
+        const user = withNio();
+        repo.findOne.mockResolvedValue(user);
+        repo.save.mockImplementation((u: any) => u);
+        const qb = mockExternalNumberTaken(profileRepo, false);
+        await service.update('u1', { profile: { external_employee_number: ' 48213 ' } } as any);
+        expect(user.profile.external_employee_number).toBe('48213');
+        expect(user.profile.employee_number).toBe('NIOMT123456');
+        expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('<>'), { excludeProfileId: 'p1' });
+      });
+
+      it('BadRequest si lo tiene otro perfil', async () => {
+        repo.findOne.mockResolvedValue(withNio());
+        mockExternalNumberTaken(profileRepo, true);
+        await expect(service.update('u1', { profile: { external_employee_number: '48213' } } as any))
+          .rejects.toBeInstanceOf(BadRequestException);
+        expect(repo.save).not.toHaveBeenCalled();
+      });
+
+      it('vacío lo borra (null) sin consultar unicidad', async () => {
+        const user = withNio();
+        user.profile.external_employee_number = '48213';
+        repo.findOne.mockResolvedValue(user);
+        repo.save.mockImplementation((u: any) => u);
+        await service.update('u1', { profile: { external_employee_number: '' } } as any);
+        expect(user.profile.external_employee_number).toBeNull();
+        expect(profileRepo.createQueryBuilder).not.toHaveBeenCalled();
+      });
+
+      it('si no viene en el body no se toca', async () => {
+        const user = withNio();
+        user.profile.external_employee_number = '48213';
+        repo.findOne.mockResolvedValue(user);
+        repo.save.mockImplementation((u: any) => u);
+        await service.update('u1', { profile: { firstName: 'Nuevo' } } as any);
+        expect(user.profile.external_employee_number).toBe('48213');
+        expect(profileRepo.createQueryBuilder).not.toHaveBeenCalled();
+      });
+
+      it('traduce la violación del índice único al guardar a BadRequest', async () => {
+        repo.findOne.mockResolvedValue(withNio());
+        mockExternalNumberTaken(profileRepo, false);
+        repo.save.mockRejectedValue(Object.assign(new Error('dup'), {
+          driverError: { code: '23505', constraint: 'UQ_user_profiles_external_employee_number' },
+        }));
+        await expect(service.update('u1', { profile: { external_employee_number: '48213' } } as any))
+          .rejects.toBeInstanceOf(BadRequestException);
+      });
     });
 
     it('cambia contraseña: hashea con bcrypt', async () => {

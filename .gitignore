@@ -55,5 +55,5 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# Ignorar todas las migraciones
-/src/db/migrations/*
+# env reales del servidor
+deploy/*.env

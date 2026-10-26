@@ -11,6 +11,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { LoginWebDto } from './dto/login-web.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { TokensDto } from './dto/tokens.dto';
 import { Public } from './decorators/public.decorator';
@@ -42,6 +43,34 @@ export class AuthController {
   async login(@Body() dto: LoginDto, @Req() req: any) {
     const ip: string = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
     return this.authService.login(dto, ip);
+  }
+
+  @Public()
+  @Post('login/web')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Login del front web usando employee_number',
+    description:
+      'Endpoint exclusivo del front web. No crea sesión de dispositivo ni emite `sid`, ' +
+      'por lo que no revoca la sesión de Electron del mismo usuario. Para el desktop usar POST /auth/login.',
+  })
+  @ApiBody({
+    type: LoginWebDto,
+    examples: {
+      empleado: {
+        summary: 'Login con employee number',
+        value: { employeeNumber: 'NIOJD483920', password: 'StrongPass123' },
+      },
+    },
+  })
+  @ApiOkResponse({
+    description: 'Login exitoso: retorna usuario y tokens',
+    type: AuthResponseDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'Credenciales inválidas' })
+  async loginWeb(@Body() dto: LoginWebDto, @Req() req: any) {
+    const ip: string = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    return this.authService.loginWeb(dto, ip);
   }
 
   @Public()

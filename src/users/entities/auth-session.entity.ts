@@ -33,6 +33,14 @@ export class AuthSession {
   @Column({ name: 'refresh_token_hash', type: 'varchar', nullable: true })
   refreshTokenHash: string | null
 
+  // Hash del refresh ANTERIOR + cuándo se rotó: permite recuperar a un cliente que
+  // perdió la respuesta de un refresh (crash/reinicio) dentro de una ventana corta.
+  @Column({ name: 'prev_refresh_token_hash', type: 'varchar', nullable: true })
+  prevRefreshTokenHash: string | null
+
+  @Column({ name: 'prev_rotated_at', type: 'timestamptz', nullable: true })
+  prevRotatedAt: Date | null
+
   @Column({ name: 'last_used_at', type: 'timestamptz', nullable: true })
   lastUsedAt: Date | null
 

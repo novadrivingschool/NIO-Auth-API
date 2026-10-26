@@ -8,6 +8,7 @@ import { Repository, IsNull } from 'typeorm';
 
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
+import { LoginWebDto } from './dto/login-web.dto';
 import { TokensDto } from './dto/tokens.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { UserDto } from './dto/user.dto';
@@ -25,6 +26,12 @@ type JwtPayload = {
 
 /** Ventana de gracia para refreshes concurrentes legítimos (rotación reciente). */
 const GRACE_MS = 60_000;
+
+/**
+ * Ventana en la que el refresh token INMEDIATAMENTE anterior sigue siendo aceptable
+ * (rotándolo de nuevo). Cubre al cliente que perdió la respuesta del refresh anterior.
+ */
+const PREV_GRACE_MS = 5 * 60_000;
 
 @Injectable()
 export class AuthService {
@@ -83,6 +90,91 @@ export class AuthService {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
+  // Sesión WEB: tokens sin `sid`, hash del refresh en la tabla `users`.
+  // Compartido por `login()` (rama web legacy) y `loginWeb()`.
+  // ────────────────────────────────────────────────────────────────────────────
+  private async issueWebSession(
+    user: User,
+  ): Promise<Omit<AuthResponseDto, 'session'>> {
+    const accessToken = await this.jwt.signAsync(
+      { sub: user.id, roles: user.roles, email: user.email },
+      { secret: this.accessSecret, expiresIn: this.accessTtl },
+    );
+
+    const refreshToken = await this.jwt.signAsync(
+      { sub: user.id },
+      { secret: this.refreshSecret, expiresIn: this.refreshTtl },
+    );
+
+    // ⬅️ **IMPORTANTE**: guardar hash del refresh en users (bcrypt)
+    await this.users.updateRefreshToken(user.id, refreshToken);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email ?? '',
+        roles: user.roles,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        firstName: user.profile?.firstName,
+        lastName: user.profile?.lastName,
+        avatarUrl: user.profile?.avatarUrl,
+        employee_number: user.profile?.employee_number,
+      },
+      tokens: { accessToken, refreshToken },
+    };
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Login WEB por employee_number (endpoint dedicado del front Vue).
+  // No toca `auth_sessions` ni emite `sid`, por lo que no interfiere con
+  // las sesiones de Electron del mismo usuario.
+  // ────────────────────────────────────────────────────────────────────────────
+  async loginWeb(
+    dto: LoginWebDto,
+    ip: string = 'unknown',
+  ): Promise<AuthResponseDto> {
+    const employeeNumber = String(dto.employeeNumber).trim().toUpperCase();
+
+    // Lockout: bloquea si hay demasiados intentos fallidos recientes
+    this.throttle.check(employeeNumber, ip);
+
+    const user = await this.usersRepo
+      .createQueryBuilder('user')
+      .addSelect('user.passwordHash')
+      .innerJoinAndSelect('user.profile', 'profile')
+      .where('UPPER(profile.employee_number) = :employeeNumber', {
+        employeeNumber,
+      })
+      .andWhere('user.isActive = true')
+      .getOne();
+
+    // Mismo error y mismo coste aproximado exista o no el usuario, para no
+    // filtrar qué employee_number están dados de alta.
+    if (!user) {
+      this.throttle.registerFailure(employeeNumber, ip);
+      throw new UnauthorizedException({
+        code: 'BAD_CREDENTIALS',
+        message: 'Invalid credentials',
+      });
+    }
+
+    const ok = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!ok) {
+      this.throttle.registerFailure(employeeNumber, ip);
+      throw new UnauthorizedException({
+        code: 'BAD_CREDENTIALS',
+        message: 'Invalid credentials',
+      });
+    }
+
+    this.throttle.registerSuccess(employeeNumber, ip);
+
+    return this.issueWebSession(user);
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
   // Login unificado: WEB (sin deviceId/label) vs ELECTRON (con deviceId+label)
   // ────────────────────────────────────────────────────────────────────────────
   async login(dto: LoginDto, ip: string = 'unknown'): Promise<
@@ -100,25 +192,20 @@ export class AuthService {
     }
   > {
     const identifier = String(dto.email).trim().toLowerCase();
-    const isEmail = identifier.includes('@');
 
     // Lockout: bloquea si hay demasiados intentos fallidos recientes
     this.throttle.check(identifier, ip);
 
-    // Buscar por email primero; si no tiene @, buscar por userName en el perfil
-    let user = isEmail
-      ? await this.usersRepo.findOne({
-          where: { email: identifier, isActive: true },
-          select: ['id', 'email', 'passwordHash', 'roles', 'isActive', 'createdAt', 'updatedAt'],
-          relations: { profile: true },
-        })
-      : await this.usersRepo
-          .createQueryBuilder('user')
-          .addSelect(['user.passwordHash'])
-          .innerJoinAndSelect('user.profile', 'profile')
-          .where('LOWER(profile.user_name) = :userName', { userName: identifier })
-          .andWhere('user.isActive = true')
-          .getOne();
+    // Login solo por employee_number (case-insensitive)
+    const user = await this.usersRepo
+      .createQueryBuilder('user')
+      .addSelect(['user.passwordHash'])
+      .innerJoinAndSelect('user.profile', 'profile')
+      .where('UPPER(profile.employee_number) = :employeeNumber', {
+        employeeNumber: identifier.toUpperCase(),
+      })
+      .andWhere('user.isActive = true')
+      .getOne();
 
     if (!user) {
       this.throttle.registerFailure(identifier, ip);
@@ -143,34 +230,7 @@ export class AuthService {
 
     // ─────────── WEB (tokens sin sid, refresh en tabla users) ───────────
     if (!isElectron) {
-      const accessToken = await this.jwt.signAsync(
-        { sub: user.id, roles: user.roles, email: user.email },
-        { secret: this.accessSecret, expiresIn: this.accessTtl },
-      );
-
-      const refreshToken = await this.jwt.signAsync(
-        { sub: user.id },
-        { secret: this.refreshSecret, expiresIn: this.refreshTtl },
-      );
-
-      // ⬅️ **IMPORTANTE**: guardar hash del refresh en users (bcrypt)
-      await this.users.updateRefreshToken(user.id, refreshToken);
-
-      return {
-        user: {
-          id: user.id,
-          email: user.email ?? '',
-          roles: user.roles,
-          isActive: user.isActive,
-          createdAt: user.createdAt,
-          updatedAt: user.updatedAt,
-          firstName: user.profile?.firstName,
-          lastName: user.profile?.lastName,
-          avatarUrl: user.profile?.avatarUrl,
-          employee_number: user.profile?.employee_number,
-        },
-        tokens: { accessToken, refreshToken },
-      };
+      return this.issueWebSession(user);
     }
 
     // ─────────── ELECTRON (tokens con sid, refresh en auth_sessions) ───────────
@@ -313,10 +373,23 @@ export class AuthService {
         });
       }
 
-      const ok =
-        session.refreshTokenHash &&
+      const matchesCurrent =
+        !!session.refreshTokenHash &&
         (await argon2.verify(session.refreshTokenHash, refreshToken));
-      if (!ok) {
+
+      // El cliente pudo perder la respuesta del refresh anterior (crash/reinicio):
+      // acepta el token inmediatamente anterior dentro de PREV_GRACE_MS y rota de nuevo.
+      // El token anterior queda invalidado al rotar (prev pasa a ser el actual).
+      const prevAgeOk =
+        !!session.prevRotatedAt &&
+        Date.now() - session.prevRotatedAt.getTime() < PREV_GRACE_MS;
+      const matchesPrev =
+        !matchesCurrent &&
+        prevAgeOk &&
+        !!session.prevRefreshTokenHash &&
+        (await argon2.verify(session.prevRefreshTokenHash, refreshToken));
+
+      if (!matchesCurrent && !matchesPrev) {
         // Grace window anti-race: si la rotación fue hace muy poco, es muy
         // probable que sea un refresh concurrente legítimo del mismo cliente
         // que llegó con el token anterior. No revocamos; el cliente debe
@@ -333,6 +406,8 @@ export class AuthService {
         session.isActive = false;
         session.revokedAt = new Date();
         session.refreshTokenHash = null;
+        session.prevRefreshTokenHash = null;
+        session.prevRotatedAt = null;
         await this.sessionsRepo.save(session);
         throw new UnauthorizedException({
           code: 'INVALID_REFRESH',
@@ -352,6 +427,8 @@ export class AuthService {
       const accessToken = await this.signAccessElectron(user, sid);
       const newRefresh = await this.signRefreshElectron(sid, user.id);
 
+      session.prevRefreshTokenHash = session.refreshTokenHash;
+      session.prevRotatedAt = new Date();
       session.refreshTokenHash = await argon2.hash(newRefresh);
       session.lastUsedAt = new Date();
       await this.sessionsRepo.save(session);

@@ -6,6 +6,8 @@ import {
     OnGatewayDisconnect,
     ConnectedSocket,
     OnGatewayInit,
+    SubscribeMessage,
+    MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
@@ -15,7 +17,7 @@ import { DevicesRegistry } from './devices.registry';
 import { AuthSession } from 'src/users/entities/auth-session.entity';
 import { ConfigService } from '@nestjs/config';
 
-type JwtPayload = { sub: string; sid: string };
+type JwtPayload = { sub: string; sid?: string; roles?: string[] };
 
 const TAG = '[ws/realtime]';
 const L = (...a: any[]) => console.log(TAG, ...a);
@@ -72,10 +74,27 @@ export class DevicesGateway
                 return client.disconnect(true);
             }
 
-            const { sid, sub: userId } = payload || ({} as JwtPayload);
-            if (!sid || !userId) {
-                W('payload sin sid/sub → disconnect', payload);
+            const { sid, sub: userId, roles } = payload || ({} as JwtPayload);
+            if (!userId) {
+                W('payload sin sub → disconnect', payload);
                 return client.disconnect(true);
+            }
+
+            // Token WEB (sin sid): no cuenta como presencia de dispositivo. Todos escuchan su sala
+            // `user:{id}`; los admins además la de handshakes `admin:{id}`.
+            if (!sid) {
+                const isAdmin = (roles ?? []).some(r =>
+                    ['admin', 'super_admin'].includes(String(r).toLowerCase()),
+                );
+                (client.data as any).kind = 'web';
+                (client.data as any).userId = userId;
+                // Todo usuario web escucha SOLO lo suyo (modo vinculado / estado de su app);
+                // la sala de handshakes `admin:{id}` sigue siendo exclusiva de admins.
+                await client.join(`user:${userId}`);
+                if (isAdmin) await client.join(`admin:${userId}`);
+                client.emit('connected', { ok: true, kind: 'web', socketId: client.id });
+                L('WEB ADMIN CONNECTED', { id: client.id, userId });
+                return;
             }
 
             // La sesión debe existir/estar activa y tener deviceId
@@ -106,6 +125,8 @@ export class DevicesGateway
                 userId,
                 sid,
                 connectedAt: Date.now(),
+                // Cliente nuevo (shiftAware): el socket es canal de control y arranca fuera de turno.
+                onShift: !((client.handshake.auth as any)?.shiftAware === true),
             });
 
             client.emit('connected', {
@@ -125,8 +146,23 @@ export class DevicesGateway
         }
     }
 
+    /** El cliente informa si tiene turno abierto (clock-in / resume = true, clock-out = false). */
+    @SubscribeMessage('shift:state')
+    handleShiftState(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() body: { onShift?: unknown },
+    ) {
+        if ((client.data as any)?.kind === 'web') return { ok: false };
+        const p = this.registry.setOnShift(client.id, body?.onShift === true);
+        return { ok: !!p };
+    }
+
     handleDisconnect(@ConnectedSocket() client: Socket) {
-        const { userId, deviceId, sid } = (client.data ?? {}) as any;
+        const { userId, deviceId, sid, kind } = (client.data ?? {}) as any;
+        if (kind === 'web') {
+            L('WEB ADMIN DISCONNECTED', { id: client.id, userId });
+            return;
+        }
         this.registry.deleteBySocket(client.id);
         W('DISCONNECTED', { id: client.id, userId, deviceId, sid });
     }
