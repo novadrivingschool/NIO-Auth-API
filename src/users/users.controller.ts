@@ -17,6 +17,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   NotFoundException,
   ValidationPipe,
 } from '@nestjs/common';
@@ -25,6 +26,7 @@ import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { QueryFiltersDto } from './dto/query-filters.dto';
+import { assertDevActivityBotChangeAllowed } from './dev-activity-bot.policy';
 // import { Public } from '../auth/decorators/public.decorator'; // Usa esto si alguna ruta debe ser pública
 
 @ApiTags('users')
@@ -63,7 +65,11 @@ export class UsersController {
   @ApiBadRequestResponse({
     description: 'Datos inválidos o email ya registrado',
   })
-  create(@Body() dto: CreateUserDto) {
+  create(
+    @Body() dto: CreateUserDto,
+    @Req() req?: { user?: { roles?: string[] } },
+  ) {
+    assertDevActivityBotChangeAllowed(req?.user?.roles, dto.profile);
     return this.usersService.create(dto);
   }
 
@@ -120,7 +126,12 @@ export class UsersController {
   @ApiBadRequestResponse({
     description: 'Datos inválidos o sin campos para actualizar',
   })
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserDto,
+    @Req() req?: { user?: { roles?: string[] } },
+  ) {
+    assertDevActivityBotChangeAllowed(req?.user?.roles, dto.profile);
     return this.usersService.update(id, dto);
   }
 

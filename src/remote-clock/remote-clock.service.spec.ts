@@ -3,13 +3,17 @@ import { RemoteClockService } from './remote-clock.service';
 
 function build(opts: {
   external?: string | null;
+  linked?: boolean;
   presence?: { deviceId: string; onShift: boolean; connectedAt: number } | null;
   ack?: { delivered: boolean; response?: any };
 }) {
   const usersRepo = {
     findOne: jest.fn(async () => ({
       id: 'u1',
-      profile: { external_employee_number: opts.external === undefined ? 'EXT-1' : opts.external },
+      profile: {
+        external_employee_number: opts.external === undefined ? 'EXT-1' : opts.external,
+        activity_linked: opts.linked ?? true,
+      },
     })),
   };
   const registry = {
@@ -33,6 +37,12 @@ async function codeOf(p: Promise<unknown>): Promise<string | undefined> {
 }
 
 describe('RemoteClockService.request', () => {
+  it('409 NOT_LINKED y no envía nada a la app si el usuario está en modo independiente (NIO | AR)', async () => {
+    const { service, registry } = build({ presence, linked: false });
+    expect(await codeOf(service.request('u1', 'EXT-1', 'CLOCK_IN'))).toBe('NOT_LINKED');
+    expect(registry.requestAck).not.toHaveBeenCalled();
+  });
+
   it('403 EXTERNAL_MISMATCH si el externo no es del usuario del token', async () => {
     const { service, registry } = build({ presence });
     expect(await codeOf(service.request('u1', 'OTRO-9', 'CLOCK_IN'))).toBe('EXTERNAL_MISMATCH');

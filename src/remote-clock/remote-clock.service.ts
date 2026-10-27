@@ -62,6 +62,11 @@ export class RemoteClockService {
     const user = await this.usersRepo.findOne({ where: { id: userId, isActive: true }, relations: ['profile'] });
     if (!user) throw new ForbiddenException('Usuario no encontrado o inactivo.');
 
+    // Solo el modo NIO + AR permite que el Activity Report mande clocks a la app NIO.
+    if (user.profile?.activity_linked !== true) {
+      throw fail(409, 'NOT_LINKED', 'Tu usuario no está en modo NIO + AR: el Activity Report no controla la app NIO.');
+    }
+
     const mine = user.profile?.external_employee_number?.trim().toUpperCase();
     if (!mine) {
       throw fail(403, 'NO_EXTERNAL_NUMBER', 'Tu usuario no tiene número de empleado externo asignado.');

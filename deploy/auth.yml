@@ -1,0 +1,29 @@
+# auth-and-users-api (nio-auth) -- compose de SERVIDOR (imagen desde GHCR, sin build).
+# Se copia a ~/NovaInOut/auth.yml junto con auth.env.
+# Servidor con docker-compose v1 (con guion): el proyecto se fija con -p (v1 no soporta `name:`).
+#
+#   docker-compose --env-file auth.env -f auth.yml -p nio-auth pull
+#   docker-compose --env-file auth.env -f auth.yml -p nio-auth up -d
+
+services:
+  auth:
+    image: ghcr.io/novadrivingschool/nio-auth-api:${AUTH_IMAGE_TAG:?falta AUTH_IMAGE_TAG en auth.env}
+    container_name: nio-auth-dev
+    restart: unless-stopped
+    # Red bridge por defecto: el servidor ya no tiene rangos libres para crear redes nuevas por proyecto.
+    network_mode: bridge
+    env_file: auth.env
+    ports:
+      # Loopback: el nginx del host (nginx.host.conf) termina TLS y reenvía aquí.
+      - '127.0.0.1:${AUTH_HOST_PORT:-5013}:5013'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:5013/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

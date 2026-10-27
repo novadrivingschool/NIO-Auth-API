@@ -97,4 +97,12 @@ export class UserProfile {
   @ApiPropertyOptional({ default: false })
   @Column({ name: 'activity_linked', type: 'boolean', default: false })
   activity_linked: boolean;
+
+  /**
+   * SOLO desarrollo/pruebas: muestra en la app NIO de este usuario el bot que simula actividad
+   * (para probar el monitor). Solo lo cambia un super_admin y solo con DEV_ACTIVITY_BOT=true.
+   */
+  @ApiPropertyOptional({ default: false })
+  @Column({ name: 'dev_activity_bot', type: 'boolean', default: false })
+  dev_activity_bot: boolean;
 }

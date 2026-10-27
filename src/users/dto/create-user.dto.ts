@@ -42,6 +42,14 @@ export class CreateUserProfileDto {
   @IsOptional()
   @IsBoolean()
   activity_linked?: boolean;
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'SOLO desarrollo/pruebas: muestra el bot de actividad en la app NIO del usuario. Solo super_admin y con DEV_ACTIVITY_BOT=true en el API.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  dev_activity_bot?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsObject() metadata?: Record<
     string,
     any

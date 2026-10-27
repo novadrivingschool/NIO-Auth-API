@@ -33,6 +33,9 @@ export class DevicesRegistry {
     }
 
     set(p: DevicePresence) {
+        // Reconexión del mismo dispositivo: descarta el socket anterior para no dejar huérfanos.
+        const prev = this.byDevice.get(p.deviceId);
+        if (prev && prev.socketId !== p.socketId) this.bySocket.delete(prev.socketId);
         this.byDevice.set(p.deviceId, p);
         this.bySocket.set(p.socketId, p);
         L('set presence', p);
@@ -106,9 +109,20 @@ export class DevicesRegistry {
         const p = this.bySocket.get(socketId);
         if (p) {
             this.bySocket.delete(socketId);
-            this.byDevice.delete(p.deviceId);
-            W('deleteBySocket removed presence', p);
-            this.emitPresence(p.userId);
+            // Solo borra la presencia del dispositivo si este socket sigue siendo el vigente.
+            // Si la app se cerró (Exit) y reabrió, el socket viejo se desconecta DESPUÉS de que el
+            // nuevo se registró: borrar aquí dejaría al usuario sin presencia ("No connection").
+            const current = this.byDevice.get(p.deviceId);
+            if (current?.socketId === socketId) {
+                this.byDevice.delete(p.deviceId);
+                W('deleteBySocket removed presence', p);
+                this.emitPresence(p.userId);
+            } else {
+                L('deleteBySocket: socket obsoleto, la presencia vigente se conserva', {
+                    stale: socketId,
+                    current: current?.socketId ?? null,
+                });
+            }
         } else {
             W('deleteBySocket no presence for', socketId);
         }

@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { Role } from './entities/user.entity';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 
 describe('UsersController', () => {
   let controller: UsersController;
@@ -103,6 +107,60 @@ describe('UsersController', () => {
     it('propaga 400 si payload inválido', async () => {
       usersServiceMock.update.mockRejectedValue(new BadRequestException('No fields to update'));
       await expect(controller.update('u1', {} as any)).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('dev_activity_bot (solo super_admin y con DEV_ACTIVITY_BOT=true)', () => {
+    const previousFlag = process.env.DEV_ACTIVITY_BOT;
+    const superAdminReq = { user: { roles: [Role.SUPER_ADMIN] } };
+    const adminReq = { user: { roles: [Role.ADMIN] } };
+    const botDto = { profile: { dev_activity_bot: true } } as any;
+
+    afterEach(() => {
+      if (previousFlag === undefined) delete process.env.DEV_ACTIVITY_BOT;
+      else process.env.DEV_ACTIVITY_BOT = previousFlag;
+    });
+
+    it('update: 403 si DEV_ACTIVITY_BOT no está en true (aunque sea super_admin)', () => {
+      delete process.env.DEV_ACTIVITY_BOT;
+      expect(() => controller.update('u1', botDto, superAdminReq)).toThrow(
+        ForbiddenException,
+      );
+      expect(usersServiceMock.update).not.toHaveBeenCalled();
+    });
+
+    it('update: 403 si quien edita no es super_admin (aunque la variable esté en true)', () => {
+      process.env.DEV_ACTIVITY_BOT = 'true';
+      expect(() => controller.update('u1', botDto, adminReq)).toThrow(
+        ForbiddenException,
+      );
+      expect(() => controller.update('u1', botDto)).toThrow(ForbiddenException);
+      expect(usersServiceMock.update).not.toHaveBeenCalled();
+    });
+
+    it('update: pasa con super_admin y DEV_ACTIVITY_BOT=true', async () => {
+      process.env.DEV_ACTIVITY_BOT = 'true';
+      usersServiceMock.update.mockResolvedValue({ id: 'u1' });
+      await controller.update('u1', botDto, superAdminReq);
+      expect(usersServiceMock.update).toHaveBeenCalledWith('u1', botDto);
+    });
+
+    it('update: las ediciones que no tocan dev_activity_bot no se ven afectadas', async () => {
+      delete process.env.DEV_ACTIVITY_BOT;
+      usersServiceMock.update.mockResolvedValue({ id: 'u1' });
+      await controller.update('u1', { email: 'a@b.com' } as any, adminReq);
+      expect(usersServiceMock.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('create: aplica el mismo candado', () => {
+      process.env.DEV_ACTIVITY_BOT = 'true';
+      const dto = {
+        email: 'x@x.com',
+        password: 'Passw0rd!',
+        profile: { dev_activity_bot: true },
+      } as any;
+      expect(() => controller.create(dto, adminReq)).toThrow(ForbiddenException);
+      expect(usersServiceMock.create).not.toHaveBeenCalled();
     });
   });
 

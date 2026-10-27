@@ -353,6 +353,12 @@ export class UsersService {
         activityLinked: dto.profile.activity_linked,
       });
     }
+    // Bot de pruebas (solo dev): misma señal; la app relee su perfil y habilita/oculta el bot.
+    if (typeof dto.profile?.dev_activity_bot === 'boolean') {
+      this.registry?.notifyUser(saved.id, 'profile:linked', {
+        devActivityBot: dto.profile.dev_activity_bot,
+      });
+    }
     return saved;
   }
 
