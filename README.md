@@ -111,7 +111,7 @@ Reglas del `auth.env`:
 **4. Descargar y levantar:**
 
 ```bash
-docker pull ghcr.io/novadrivingschool/nio-auth-api:1.0.0
+docker pull ghcr.io/novadrivingschool/nio-auth-api:1.0.1
 $DC stop; $DC rm -f
 $DC up -d
 sleep 25
