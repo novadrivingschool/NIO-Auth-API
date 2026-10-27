@@ -231,6 +231,30 @@ describe('UsersService', () => {
       expect(profileRepo.update).not.toHaveBeenCalled();
     });
 
+    describe('bot de pruebas (dev_activity_bot)', () => {
+      const build = () => {
+        const registry = { notifyUser: jest.fn() };
+        const svc = new UsersService(repo as any, profileRepo as any, dataSource as any, registry as any);
+        const user = makeUser({ profile: makeProfile({ employee_number: 'NIOMT123456' }) });
+        repo.findOne.mockResolvedValue(user);
+        repo.save.mockImplementation((u: any) => u);
+        return { registry, svc, user };
+      };
+
+      it.each([true, false])('guarda dev_activity_bot=%p y avisa a la app del usuario (profile:linked)', async (value) => {
+        const { registry, svc, user } = build();
+        await svc.update('u1', { profile: { dev_activity_bot: value } } as any);
+        expect(user.profile.dev_activity_bot).toBe(value);
+        expect(registry.notifyUser).toHaveBeenCalledWith('u1', 'profile:linked', { devActivityBot: value });
+      });
+
+      it('no avisa si la edición no toca dev_activity_bot', async () => {
+        const { registry, svc } = build();
+        await svc.update('u1', { profile: { firstName: 'Nuevo' } } as any);
+        expect(registry.notifyUser).not.toHaveBeenCalled();
+      });
+    });
+
     describe('external_employee_number (app de RR.HH.)', () => {
       const withNio = () => makeUser({ profile: makeProfile({ employee_number: 'NIOMT123456' }) });
 

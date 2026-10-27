@@ -145,6 +145,14 @@ describe('UsersController', () => {
       expect(usersServiceMock.update).toHaveBeenCalledWith('u1', botDto);
     });
 
+    it('update: super_admin puede APAGAR (false) aunque DEV_ACTIVITY_BOT no esté en true', async () => {
+      delete process.env.DEV_ACTIVITY_BOT;
+      usersServiceMock.update.mockResolvedValue({ id: 'u1' });
+      const offDto = { profile: { dev_activity_bot: false } } as any;
+      await controller.update('u1', offDto, superAdminReq);
+      expect(usersServiceMock.update).toHaveBeenCalledWith('u1', offDto);
+    });
+
     it('update: las ediciones que no tocan dev_activity_bot no se ven afectadas', async () => {
       delete process.env.DEV_ACTIVITY_BOT;
       usersServiceMock.update.mockResolvedValue({ id: 'u1' });

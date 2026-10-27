@@ -43,19 +43,42 @@ describe('dev-activity-bot.policy', () => {
       expect(() => assertDevActivityBotChangeAllowed([], {})).not.toThrow();
     });
 
-    it('403 si la variable está apagada, incluso para super_admin (true y false)', () => {
-      setFlag(undefined);
-      for (const value of [true, false]) {
+    it('403 al ENCENDER (true) si la variable está apagada, incluso para super_admin', () => {
+      for (const flag of [undefined, '', 'false']) {
+        setFlag(flag);
         expect(() =>
           assertDevActivityBotChangeAllowed(superAdmin, {
-            dev_activity_bot: value,
+            dev_activity_bot: true,
           }),
         ).toThrow(ForbiddenException);
       }
-      setFlag('false');
+    });
+
+    it('permite APAGAR (false) a super_admin aunque la variable esté apagada (no queda atascado)', () => {
+      for (const flag of [undefined, '', 'false', 'true']) {
+        setFlag(flag);
+        expect(() =>
+          assertDevActivityBotChangeAllowed(superAdmin, {
+            dev_activity_bot: false,
+          }),
+        ).not.toThrow();
+      }
+    });
+
+    it('403 si quien apaga no es super_admin, con la variable apagada', () => {
+      setFlag(undefined);
+      for (const roles of [[Role.ADMIN], [Role.EMPLOYEE], [], undefined]) {
+        expect(() =>
+          assertDevActivityBotChangeAllowed(roles, { dev_activity_bot: false }),
+        ).toThrow(ForbiddenException);
+      }
+    });
+
+    it('con la variable apagada solo `false` se salta el candado (null sigue en 403)', () => {
+      setFlag(undefined);
       expect(() =>
         assertDevActivityBotChangeAllowed(superAdmin, {
-          dev_activity_bot: true,
+          dev_activity_bot: null,
         }),
       ).toThrow(ForbiddenException);
     });
