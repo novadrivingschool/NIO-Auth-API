@@ -1,11 +1,15 @@
 import {
   ConflictException,
   ForbiddenException,
+  GatewayTimeoutException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
 import { DevicesRegistry } from '../devices/devices.registry';
@@ -18,11 +22,19 @@ export const HANDSHAKE_TIMEOUT_MS = 20_000;
 export const HANDSHAKE_UPDATE_EVENT = 'handshake:update';
 /** Evento que recibe el dispositivo (Electron). */
 export const HANDSHAKE_REQUEST_EVENT = 'handshake:request';
+/** Evento de "probar conexión": el dispositivo lo confirma con un ack y muestra una animación. */
+export const PING_REQUEST_EVENT = 'ping:request';
+/** Tiempo máximo que se espera el ack de un ping. */
+export const PING_TIMEOUT_MS = 5_000;
+/** Separación mínima entre pings del mismo admin al mismo usuario. */
+export const PING_COOLDOWN_MS = 2_000;
 
 @Injectable()
 export class HandshakesService implements OnModuleInit {
   private readonly log = new Logger(HandshakesService.name);
   private readonly timers = new Map<string, NodeJS.Timeout>();
+  /** `adminId:targetUserId` → instante del último ping (límite de frecuencia, en memoria). */
+  private readonly lastPing = new Map<string, number>();
 
   constructor(
     @InjectRepository(HandshakeCapture)
@@ -79,6 +91,39 @@ export class HandshakesService implements OnModuleInit {
 
     this.log.log(`handshake ${row.id} → user ${targetUserId} device ${presence.deviceId}`);
     return this.toView(await this.load(row.id));
+  }
+
+  /**
+   * Prueba de conexión: avisa al dispositivo (que muestra una animación) y espera su ack.
+   * No toma captura, no escribe en BD y no exige clock-in; solo que el NIO esté conectado.
+   */
+  async ping(adminId: string, targetUserId: string) {
+    const now = Date.now();
+    const key = `${adminId}:${targetUserId}`;
+    if (now - (this.lastPing.get(key) ?? 0) < PING_COOLDOWN_MS) {
+      throw new HttpException('Espera un momento antes de volver a probar.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    this.lastPing.set(key, now);
+    if (this.lastPing.size > 1000) {
+      for (const [k, t] of this.lastPing) if (now - t > PING_COOLDOWN_MS) this.lastPing.delete(k);
+    }
+
+    const presence = this.registry.getByUser(targetUserId);
+    if (!presence) throw new ConflictException('El usuario no está conectado.');
+
+    const pingId = randomUUID();
+    const sentAt = Date.now();
+    const { delivered } = await this.registry.requestAck(
+      presence.deviceId,
+      PING_REQUEST_EVENT,
+      { pingId, sentAt: new Date(sentAt).toISOString() },
+      PING_TIMEOUT_MS,
+    );
+    if (!delivered) throw new GatewayTimeoutException('El dispositivo no respondió a tiempo.');
+
+    const rttMs = Date.now() - sentAt;
+    this.log.log(`ping ${pingId} → user ${targetUserId} device ${presence.deviceId} ${rttMs}ms`);
+    return { ok: true, pingId, targetUserId, deviceId: presence.deviceId, rttMs };
   }
 
   /** El dispositivo entrega captura y actividad. Solo el propio usuario objetivo. */

@@ -47,6 +47,12 @@ export class HandshakesController {
     return this.handshakes.request(assertAdmin(req), dto.targetUserId);
   }
 
+  @Post('ping')
+  @ApiOperation({ summary: 'Admin: prueba la conexión con un dispositivo (animación, sin captura)' })
+  ping(@Req() req: Request, @Body() dto: CreateHandshakeDto) {
+    return this.handshakes.ping(assertAdmin(req), dto.targetUserId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Admin: historial de handshakes de un usuario' })
   list(@Req() req: Request, @Query('userId', new ParseUUIDPipe()) userId: string) {
