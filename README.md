@@ -111,7 +111,7 @@ Reglas del `auth.env`:
 **4. Descargar y levantar:**
 
 ```bash
-docker pull ghcr.io/novadrivingschool/nio-auth-api:1.0.1
+docker pull ghcr.io/novadrivingschool/nio-auth-api:1.0.2
 $DC stop; $DC rm -f
 $DC up -d
 sleep 25
@@ -145,7 +145,7 @@ Sustituir la línea `# contenido de nginx.host.conf...` por el contenido real de
 ```bash
 cd ~/NovaInOut
 DC="docker-compose --env-file auth.env -f auth.yml -p nio-auth"
-sed -i 's/^AUTH_IMAGE_TAG=.*/AUTH_IMAGE_TAG=1.0.1/' auth.env     # la versión nueva
+sed -i 's/^AUTH_IMAGE_TAG=.*/AUTH_IMAGE_TAG=1.0.2/' auth.env     # la versión nueva
 $DC pull
 $DC stop; $DC rm -f          # obligatorio en docker-compose v1 (bug ContainerConfig)
 $DC up -d

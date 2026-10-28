@@ -255,6 +255,30 @@ describe('UsersService', () => {
       });
     });
 
+    describe('DevTools de la app NIO (devtools_enabled)', () => {
+      const build = () => {
+        const registry = { notifyUser: jest.fn() };
+        const svc = new UsersService(repo as any, profileRepo as any, dataSource as any, registry as any);
+        const user = makeUser({ profile: makeProfile({ employee_number: 'NIOMT123456' }) });
+        repo.findOne.mockResolvedValue(user);
+        repo.save.mockImplementation((u: any) => u);
+        return { registry, svc, user };
+      };
+
+      it.each([true, false])('guarda devtools_enabled=%p y avisa a la app del usuario (profile:linked)', async (value) => {
+        const { registry, svc, user } = build();
+        await svc.update('u1', { profile: { devtools_enabled: value } } as any);
+        expect(user.profile.devtools_enabled).toBe(value);
+        expect(registry.notifyUser).toHaveBeenCalledWith('u1', 'profile:linked', { devtoolsEnabled: value });
+      });
+
+      it('no avisa si la edición no toca devtools_enabled', async () => {
+        const { registry, svc } = build();
+        await svc.update('u1', { profile: { firstName: 'Nuevo' } } as any);
+        expect(registry.notifyUser).not.toHaveBeenCalled();
+      });
+    });
+
     describe('external_employee_number (app de RR.HH.)', () => {
       const withNio = () => makeUser({ profile: makeProfile({ employee_number: 'NIOMT123456' }) });
 

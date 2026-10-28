@@ -27,6 +27,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { QueryFiltersDto } from './dto/query-filters.dto';
 import { assertDevActivityBotChangeAllowed } from './dev-activity-bot.policy';
+import { assertDevtoolsChangeAllowed } from './devtools.policy';
 // import { Public } from '../auth/decorators/public.decorator'; // Usa esto si alguna ruta debe ser pública
 
 @ApiTags('users')
@@ -70,6 +71,7 @@ export class UsersController {
     @Req() req?: { user?: { roles?: string[] } },
   ) {
     assertDevActivityBotChangeAllowed(req?.user?.roles, dto.profile);
+    assertDevtoolsChangeAllowed(req?.user?.roles, dto.profile);
     return this.usersService.create(dto);
   }
 
@@ -132,6 +134,7 @@ export class UsersController {
     @Req() req?: { user?: { roles?: string[] } },
   ) {
     assertDevActivityBotChangeAllowed(req?.user?.roles, dto.profile);
+    assertDevtoolsChangeAllowed(req?.user?.roles, dto.profile);
     return this.usersService.update(id, dto);
   }
 

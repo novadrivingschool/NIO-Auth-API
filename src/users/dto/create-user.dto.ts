@@ -50,6 +50,14 @@ export class CreateUserProfileDto {
   @IsOptional()
   @IsBoolean()
   dev_activity_bot?: boolean;
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Abre la ventana de DevTools en la app NIO del usuario (diagnóstico en tiempo real, prod y dev). Solo super_admin y admin.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  devtools_enabled?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsObject() metadata?: Record<
     string,
     any

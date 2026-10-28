@@ -359,6 +359,12 @@ export class UsersService {
         devActivityBot: dto.profile.dev_activity_bot,
       });
     }
+    // DevTools de la app NIO (prod y dev): misma señal; la app relee su perfil y abre/cierra DevTools.
+    if (typeof dto.profile?.devtools_enabled === 'boolean') {
+      this.registry?.notifyUser(saved.id, 'profile:linked', {
+        devtoolsEnabled: dto.profile.devtools_enabled,
+      });
+    }
     return saved;
   }
 

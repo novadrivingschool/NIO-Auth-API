@@ -105,4 +105,12 @@ export class UserProfile {
   @ApiPropertyOptional({ default: false })
   @Column({ name: 'dev_activity_bot', type: 'boolean', default: false })
   dev_activity_bot: boolean;
+
+  /**
+   * Abre la ventana de DevTools en la app NIO de este usuario (producción y desarrollo), en tiempo
+   * real. Solo lo cambian super_admin y admin. Sirve para diagnosticar problemas en equipos concretos.
+   */
+  @ApiPropertyOptional({ default: false })
+  @Column({ name: 'devtools_enabled', type: 'boolean', default: false })
+  devtools_enabled: boolean;
 }
