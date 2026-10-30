@@ -36,6 +36,8 @@ type DeviceRow = {
   online: boolean;
   /** true si hay socket conectado (canal de control), aunque no tenga turno abierto */
   connected: boolean;
+  /** true si está en lunch (turno abierto, app sin medir actividad ni tomar capturas) */
+  onLunch: boolean;
   /** cantidad de handshakes históricos (para mostrar el acordeón de historial) */
   handshakeCount: number;
   /** momento en que se abrió el socket (≈ clock-in), solo si online */
@@ -145,6 +147,7 @@ export class DevicesController {
         lastUsedAt: s?.lastUsedAt ? toIso(s.lastUsedAt) ?? null : null,
         online: !!p && p.onShift,
         connected: !!p,
+        onLunch: !!p && p.onShift && p.onLunch,
         handshakeCount: handshakeCounts.get(u.id) ?? 0,
         connectedAt: p && p.onShift ? toIso(p.connectedAt) ?? null : null,
         createdAt: toIso(s?.createdAt),

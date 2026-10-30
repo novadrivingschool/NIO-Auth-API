@@ -7,6 +7,7 @@ const presence = (socketId: string, connectedAt: number) => ({
   sid: 'sid-1',
   connectedAt,
   onShift: false,
+  onLunch: false,
 });
 
 describe('DevicesRegistry', () => {
@@ -30,5 +31,20 @@ describe('DevicesRegistry', () => {
     registry.set(presence('s1', 1));
     registry.deleteBySocket('s1');
     expect(registry.getByUser('user-1')).toBeNull();
+  });
+
+  it('lunch: solo vale con turno abierto y se limpia al cerrar el turno', () => {
+    registry.set(presence('s1', 1));
+    expect(registry.setOnLunch('s1', true)?.onLunch).toBe(false); // sin turno no hay lunch
+    registry.setOnShift('s1', true);
+    expect(registry.setOnLunch('s1', true)?.onLunch).toBe(true);
+    expect(registry.getByUser('user-1')?.onLunch).toBe(true);
+    expect(registry.setOnLunch('s1', false)?.onLunch).toBe(false);
+    registry.setOnLunch('s1', true);
+    expect(registry.setOnShift('s1', false)?.onLunch).toBe(false); // clock out limpia el lunch
+  });
+
+  it('lunch: un socket desconocido no cambia nada', () => {
+    expect(registry.setOnLunch('nope', true)).toBeNull();
   });
 });

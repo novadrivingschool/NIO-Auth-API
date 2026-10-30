@@ -19,6 +19,7 @@ function build(opts: {
   const registry = {
     getByUser: jest.fn(() => opts.presence ?? null),
     requestAck: jest.fn(async () => opts.ack ?? { delivered: true, response: { ok: true, recordId: 7 } }),
+    notifyUser: jest.fn(() => 1),
   };
   const config = { get: jest.fn(() => undefined) };
   const service = new RemoteClockService(usersRepo as any, registry as any, config as any);
@@ -104,5 +105,70 @@ describe('RemoteClockService.status', () => {
     expect(service.status('u1')).toMatchObject({ connected: true, onShift: true });
     const none = build({ presence: null }).service.status('u1');
     expect(none).toMatchObject({ connected: false, onShift: false, connectedAt: null });
+  });
+});
+
+describe('RemoteClockService: lunch y comandos de admin', () => {
+  it('LUNCH_IN viaja a la app como cualquier otro comando (source ACTIVITY_REPORT)', async () => {
+    const { service, registry } = build({ presence });
+    const res = await service.request('u1', 'EXT-1', 'LUNCH_IN');
+    expect(res).toMatchObject({ ok: true, action: 'LUNCH_IN', recordId: 7 });
+    expect(registry.requestAck).toHaveBeenCalledWith(
+      'd1',
+      'clock:command',
+      expect.objectContaining({ action: 'LUNCH_IN', source: 'ACTIVITY_REPORT' }),
+      15000,
+    );
+  });
+
+  it('LUNCH_IN en modo independiente: 409 NOT_LINKED (el lunch no toca el NIO)', async () => {
+    const { service, registry } = build({ presence, linked: false });
+    expect(await codeOf(service.request('u1', 'EXT-1', 'LUNCH_IN'))).toBe('NOT_LINKED');
+    expect(registry.requestAck).not.toHaveBeenCalled();
+  });
+
+  it('requestForcedLunchBack: ok con el recordId de la app, source ADMIN_FORCE y LUNCH_OUT', async () => {
+    const { service, registry } = build({ presence });
+    await expect(service.requestForcedLunchBack('NIO-1')).resolves.toEqual({ ok: true, recordId: 7 });
+    expect(registry.requestAck).toHaveBeenCalledWith(
+      'd1',
+      'clock:command',
+      expect.objectContaining({ action: 'LUNCH_OUT', source: 'ADMIN_FORCE' }),
+      15000,
+    );
+  });
+
+  it('requestForcedLunchBack: sin socket, sin ack o rechazo → ok:false y nunca lanza', async () => {
+    await expect(build({ presence: null }).service.requestForcedLunchBack('NIO-1')).resolves.toEqual({
+      ok: false,
+      recordId: null,
+    });
+    await expect(
+      build({ presence, ack: { delivered: false } }).service.requestForcedLunchBack('NIO-1'),
+    ).resolves.toEqual({ ok: false, recordId: null });
+    await expect(
+      build({ presence, ack: { delivered: true, response: { ok: false, code: 'NOT_ON_LUNCH' } } }).service.requestForcedLunchBack('NIO-1'),
+    ).resolves.toEqual({ ok: false, recordId: null });
+  });
+
+  it('requestForcedScreenshot: pide clock:screenshot con el recordId; sin socket o sin ack → ok:false', async () => {
+    const { service, registry } = build({ presence });
+    await expect(service.requestForcedScreenshot('NIO-1', 55)).resolves.toEqual({ ok: true });
+    expect(registry.requestAck).toHaveBeenCalledWith(
+      'd1',
+      'clock:screenshot',
+      expect.objectContaining({ recordId: 55, source: 'ADMIN_FORCE' }),
+      30000,
+    );
+    await expect(build({ presence: null }).service.requestForcedScreenshot('NIO-1', 55)).resolves.toEqual({ ok: false });
+    await expect(
+      build({ presence, ack: { delivered: false } }).service.requestForcedScreenshot('NIO-1', 55),
+    ).resolves.toEqual({ ok: false });
+  });
+
+  it('notifyRecordsChanged avisa a los dispositivos del usuario', async () => {
+    const { service, registry } = build({ presence });
+    await expect(service.notifyRecordsChanged('NIO-1')).resolves.toEqual({ notified: 1 });
+    expect(registry.notifyUser).toHaveBeenCalledWith('u1', 'records:changed', expect.any(Object));
   });
 });

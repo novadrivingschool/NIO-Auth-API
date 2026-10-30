@@ -127,6 +127,7 @@ export class DevicesGateway
                 connectedAt: Date.now(),
                 // Cliente nuevo (shiftAware): el socket es canal de control y arranca fuera de turno.
                 onShift: !((client.handshake.auth as any)?.shiftAware === true),
+                onLunch: false,
             });
 
             client.emit('connected', {
@@ -154,6 +155,17 @@ export class DevicesGateway
     ) {
         if ((client.data as any)?.kind === 'web') return { ok: false };
         const p = this.registry.setOnShift(client.id, body?.onShift === true);
+        return { ok: !!p };
+    }
+
+    /** La app informa si el empleado está en lunch (go to lunch = true, back to lunch / clock-out = false). */
+    @SubscribeMessage('lunch:state')
+    handleLunchState(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() body: { onLunch?: unknown },
+    ) {
+        if ((client.data as any)?.kind === 'web') return { ok: false };
+        const p = this.registry.setOnLunch(client.id, body?.onLunch === true);
         return { ok: !!p };
     }
 

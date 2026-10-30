@@ -61,3 +61,34 @@ describe('HandshakesService.ping', () => {
     await expect(service.ping('admin-2', TARGET)).resolves.toMatchObject({ ok: true });
   });
 });
+
+describe('HandshakesService en lunch', () => {
+  const lunchPresence = { deviceId: 'dev-1', userId: 'user-1', onShift: true, onLunch: true };
+  const build = () => {
+    const registry = {
+      getByUser: jest.fn().mockReturnValue(lunchPresence),
+      listByUser: jest.fn().mockReturnValue([lunchPresence]),
+      requestAck: jest.fn(),
+      emitToRoom: jest.fn(),
+    };
+    const repo = { save: jest.fn(), create: jest.fn() };
+    return { registry, repo, service: new HandshakesService(repo as any, registry as any) };
+  };
+
+  it('ping: 409 ON_LUNCH y no se envía nada a la app', async () => {
+    const { service, registry } = build();
+    await expect(service.ping('admin-1', 'user-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'ON_LUNCH' }),
+    });
+    expect(registry.requestAck).not.toHaveBeenCalled();
+  });
+
+  it('handshake de captura: 409 ON_LUNCH, no se crea registro ni se emite', async () => {
+    const { service, registry, repo } = build();
+    await expect(service.request('admin-1', 'user-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'ON_LUNCH' }),
+    });
+    expect(repo.save).not.toHaveBeenCalled();
+    expect(registry.emitToRoom).not.toHaveBeenCalled();
+  });
+});

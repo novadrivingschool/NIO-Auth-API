@@ -8,7 +8,14 @@ import { User } from '../users/entities/user.entity';
 import { RemoteClockAction } from './dto/remote-clock.dto';
 
 export const CLOCK_COMMAND_EVENT = 'clock:command';
+/** Aviso a la app NIO de que sus registros cambiaron en el servidor (p. ej. cierre de un admin). */
+export const RECORDS_CHANGED_EVENT = 'records:changed';
 const DEFAULT_ACK_TIMEOUT_MS = 15000;
+/** Espera máxima al regreso de lunch forzado por un admin (el ack llega al crear el registro; la imagen sube después). */
+const FORCED_LUNCH_BACK_TIMEOUT_MS = 15000;
+/** Pide a la app un screenshot para el CLOCK_OUT forzado: captura + resize + subida a S3 + vínculo al registro. */
+export const SCREENSHOT_COMMAND_EVENT = 'clock:screenshot';
+const FORCED_SCREENSHOT_TIMEOUT_MS = 30000;
 
 /** Respuesta (ack) que devuelve la app Electron. */
 export interface ClockCommandAck {
@@ -118,5 +125,72 @@ export class RemoteClockService {
     } finally {
       this.inFlight.delete(userId);
     }
+  }
+
+  /** Usuario activo dueño de un employee_number del NIO (o null). */
+  private async userByEmployeeNumber(employeeNumber: string): Promise<User | null> {
+    const emp = employeeNumber.trim();
+    if (!emp) return null;
+    return this.usersRepo.findOne({
+      where: { isActive: true, profile: { employee_number: emp } },
+      relations: ['profile'],
+    });
+  }
+
+  /**
+   * Force clock out de un admin con el empleado en lunch: si su app responde, registra el regreso
+   * CON screenshot. Nunca lanza: sin socket / sin ack / rechazo = ok:false y el cierre sigue sin imagen.
+   */
+  async requestForcedLunchBack(employeeNumber: string): Promise<{ ok: boolean; recordId: number | null }> {
+    const user = await this.userByEmployeeNumber(employeeNumber);
+    const presence = user ? this.registry.getByUser(user.id) : null;
+    if (!user || !presence) return { ok: false, recordId: null };
+
+    const commandId = randomUUID();
+    const { delivered, response } = await this.registry.requestAck<ClockCommandAck>(
+      presence.deviceId,
+      CLOCK_COMMAND_EVENT,
+      {
+        commandId,
+        action: 'LUNCH_OUT',
+        source: 'ADMIN_FORCE',
+        requestedAt: new Date().toISOString(),
+      },
+      FORCED_LUNCH_BACK_TIMEOUT_MS,
+    );
+    if (!delivered || !response?.ok) {
+      this.log.warn(`lunch-back forzado sin éxito: emp=${employeeNumber} cmd=${commandId} code=${response?.code ?? 'NO_ACK'}`);
+      return { ok: false, recordId: null };
+    }
+    return { ok: true, recordId: typeof response.recordId === 'number' ? response.recordId : null };
+  }
+
+  /**
+   * Force clock out de un admin: si la app del empleado responde, toma un screenshot y lo adjunta al
+   * registro CLOCK_OUT. Nunca lanza: sin socket / sin ack / rechazo = ok:false (el clock out queda sin imagen).
+   */
+  async requestForcedScreenshot(employeeNumber: string, recordId: number): Promise<{ ok: boolean }> {
+    const user = await this.userByEmployeeNumber(employeeNumber);
+    const presence = user ? this.registry.getByUser(user.id) : null;
+    if (!user || !presence) return { ok: false };
+
+    const { delivered, response } = await this.registry.requestAck<ClockCommandAck>(
+      presence.deviceId,
+      SCREENSHOT_COMMAND_EVENT,
+      { recordId, source: 'ADMIN_FORCE', requestedAt: new Date().toISOString() },
+      FORCED_SCREENSHOT_TIMEOUT_MS,
+    );
+    if (!delivered || !response?.ok) {
+      this.log.warn(`screenshot forzado sin éxito: emp=${employeeNumber} record=${recordId} code=${response?.code ?? 'NO_ACK'}`);
+      return { ok: false };
+    }
+    return { ok: true };
+  }
+
+  /** Avisa a la app del empleado (si está conectada) que recargue sus registros. */
+  async notifyRecordsChanged(employeeNumber: string): Promise<{ notified: number }> {
+    const user = await this.userByEmployeeNumber(employeeNumber);
+    if (!user) return { notified: 0 };
+    return { notified: this.registry.notifyUser(user.id, RECORDS_CHANGED_EVENT, { at: new Date().toISOString() }) };
   }
 }

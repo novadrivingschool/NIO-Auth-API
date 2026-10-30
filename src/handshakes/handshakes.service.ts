@@ -29,6 +29,14 @@ export const PING_TIMEOUT_MS = 5_000;
 /** Separación mínima entre pings del mismo admin al mismo usuario. */
 export const PING_COOLDOWN_MS = 2_000;
 
+/** En lunch la app no mide ni captura: el tiempo es del empleado. */
+const onLunchError = (what: string) =>
+  new ConflictException({
+    statusCode: 409,
+    code: 'ON_LUNCH',
+    message: `El usuario está en lunch: no se puede ${what}.`,
+  });
+
 @Injectable()
 export class HandshakesService implements OnModuleInit {
   private readonly log = new Logger(HandshakesService.name);
@@ -67,6 +75,7 @@ export class HandshakesService implements OnModuleInit {
     if (!presence || !presence.onShift) {
       throw new ConflictException('El usuario no está conectado (sin clock-in).');
     }
+    if (presence.onLunch) throw onLunchError('solicitar una captura');
 
     const row = await this.repo.save(
       this.repo.create({
@@ -110,6 +119,7 @@ export class HandshakesService implements OnModuleInit {
 
     const presence = this.registry.getByUser(targetUserId);
     if (!presence) throw new ConflictException('El usuario no está conectado.');
+    if (presence.onLunch) throw onLunchError('probar la conexión');
 
     const pingId = randomUUID();
     const sentAt = Date.now();

@@ -14,6 +14,12 @@ export type DevicePresence = {
      * `shiftAware`) solo conectan en clock-in, por eso arrancan en true.
      */
     onShift: boolean;
+    /**
+     * true = el empleado está en lunch (modo NIO + AR). Sigue con turno abierto y con el socket
+     * conectado, pero la app no mide actividad ni toma capturas: el panel lo muestra como Lunch y
+     * se rechazan ping y handshake. Lo informa la app con `lunch:state`; solo vale con onShift.
+     */
+    onLunch: boolean;
 };
 
 const TAG = '[devices/registry]';
@@ -47,7 +53,19 @@ export class DevicesRegistry {
         const p = this.bySocket.get(socketId);
         if (!p) return null;
         p.onShift = onShift;
+        // Sin turno no hay lunch.
+        if (!onShift) p.onLunch = false;
         L('setOnShift', { deviceId: p.deviceId, userId: p.userId, onShift });
+        this.emitPresence(p.userId);
+        return p;
+    }
+
+    /** Actualiza el flag de lunch de la presencia ligada a un socket (solo tiene sentido con turno abierto). */
+    setOnLunch(socketId: string, onLunch: boolean): DevicePresence | null {
+        const p = this.bySocket.get(socketId);
+        if (!p) return null;
+        p.onLunch = onLunch && p.onShift;
+        L('setOnLunch', { deviceId: p.deviceId, userId: p.userId, onLunch: p.onLunch });
         this.emitPresence(p.userId);
         return p;
     }
@@ -69,6 +87,7 @@ export class DevicesRegistry {
         this.io.to(`user:${userId}`).emit('device:presence', {
             connected: !!p,
             onShift: !!p?.onShift,
+            onLunch: !!p?.onLunch,
         });
     }
 
